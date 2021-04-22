@@ -1,0 +1,103 @@
+version: '3'
+
+services:
+  php:
+    #env_file: .env
+    container_name: php
+    build:
+      context: ./
+      dockerfile: ./docker/etc/php/Dockerfile
+    entrypoint: sh /bin/entrypoint.sh php-fpm
+    restart: always
+    environment:
+      XDEBUG_CONFIG: "remote_host=host.docker.internal remote_enable=1"
+      PHP_IDE_CONFIG: "serverName=Docker"
+    volumes:
+     # - "./docker/etc/php/php.ini:/usr/local/etc/php/conf.d/php.ini"
+      - "./docker/etc/php/php-development.ini:/usr/local/etc/php/php.ini"
+      - "./docker/etc/php/entrypoint.sh:/bin/entrypoint.sh"
+      - ./my_project:/var/www
+      - ./my_project/var:/var/www/var
+      - ./my_project/vendor:/var/www/vendor
+      - ./my_project/var/logs:/var/www/var/logs
+      #- /var/www/web/vendor
+    expose:
+      - 9000
+    depends_on:
+      - "mysql"
+    networks:
+      - internal
+  apache:
+    env_file: .env
+    container_name: apache
+    build:
+      context: ./
+      dockerfile: ./docker/etc/httpd/Dockerfile
+    volumes:
+      - "./docker/etc/httpd/httpd.conf:/usr/local/apache2/conf/httpd.conf"
+      - ./my_project:/var/www
+      - ./my_project/var:/var/www/var
+      - ./my_project/vendor:/var/www/vendor
+      - ./my_project/var/logs:/var/www/var/logs
+      #- /var/www/web/vendor
+    depends_on:
+      - php
+    ports:
+      - 8080:8080
+    networks:
+      - internal
+  web:
+    #env_file: .env
+    container_name: web
+    build: docker/etc/nginx
+    ports:
+      - 80:80
+      - 443:443
+    restart: always
+    volumes:
+      - "./docker/etc/nginx/nginx.conf:/etc/nginx/nginx.conf"
+      - "./docker/etc/nginx/app.conf:/etc/nginx/sites-available/application.conf"
+      - "./docker/etc/nginx/app.conf:/etc/nginx/sites-enabled/application"
+      - "./docker/etc/log/nginx:/var/log/nginx"
+      - "./docker/etc/nginx/cert:/etc/ssl/cert"
+    depends_on:
+      - apache
+
+    networks:
+      - internal
+  redis:
+    image: redis:alpine
+    container_name: redis
+    command: redis-server --appendonly yes
+    volumes:
+      - ./data/redis:/data
+    ports:
+      - "8003:6379"
+    networks:
+      - internal
+
+  mysql:
+    image: mysql:5.7.30
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_DATABASE: 'apiato'
+      MYSQL_USER: 'apiato'
+      MYSQL_PASSWORD: 'apiato'
+      MYSQL_ROOT_PASSWORD: 'apiato'
+    ports:
+      - '13306:3306'
+    expose:
+      - '3306'
+    volumes:
+      - "./docker/tmp/mysql:/var/lib/mysql"
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.220.0/28
